@@ -8,9 +8,9 @@ class Settings(BaseSettings):
     alpaca_key_id: str
     alpaca_secret_key: str
 
-    # OpenAI (headline classification)
-    openai_api_key: str
-    openai_model: str = "gpt-5.4-mini"
+    # Anthropic (headline classification)
+    anthropic_api_key: str
+    anthropic_model: str = "claude-haiku-4-5"
 
     # Telegram (alert delivery)
     telegram_bot_token: str

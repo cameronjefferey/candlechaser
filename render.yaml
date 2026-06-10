@@ -17,14 +17,14 @@ services:
         sync: false # set in the dashboard
       - key: ALPACA_SECRET_KEY
         sync: false
-      - key: OPENAI_API_KEY
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-5.4-mini
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-4-5
       - key: ALERT_SCORE_THRESHOLD
         value: "70"
       - key: DB_PATH

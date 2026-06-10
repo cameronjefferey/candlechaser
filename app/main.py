@@ -16,7 +16,7 @@ async def run() -> None:
     filters = Filters(settings)
     print(
         f"candlechaser starting "
-        f"(threshold={settings.alert_score_threshold}, model={settings.openai_model})"
+        f"(threshold={settings.alert_score_threshold}, model={settings.anthropic_model})"
     )
     async for item in news_stream():
         received = time.time()

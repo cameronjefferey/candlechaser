@@ -1,19 +1,19 @@
 import json
 
-from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 
 from .config import settings
 from .prompts import SYSTEM_PROMPT
 
-_client: AsyncOpenAI | None = None
+_client: AsyncAnthropic | None = None
 
 
-def _get_client() -> AsyncOpenAI:
+def _get_client() -> AsyncAnthropic:
     # Lazy init so importing the app (e.g. --help, --test-telegram) doesn't
-    # require an OpenAI key to be set.
+    # require an Anthropic key to be set.
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=settings.openai_api_key)
+        _client = AsyncAnthropic(api_key=settings.anthropic_api_key)
     return _client
 
 
@@ -26,16 +26,19 @@ async def classify(item: dict) -> dict | None:
         "created_at": item.get("created_at", ""),
     }
     try:
-        resp = await _get_client().chat.completions.create(
-            model=settings.openai_model,
+        resp = await _get_client().messages.create(
+            model=settings.anthropic_model,
+            max_tokens=300,
+            system=SYSTEM_PROMPT,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps(payload)},
+                # Prefill forces the model to emit raw JSON with no preamble.
+                {"role": "assistant", "content": "{"},
             ],
-            response_format={"type": "json_object"},
             timeout=15,
         )
-        return _sanitize(json.loads(resp.choices[0].message.content))
+        raw = "{" + resp.content[0].text
+        return _sanitize(json.loads(raw))
     except Exception as exc:
         print(f"classification failed: {exc!r}")
         return None
