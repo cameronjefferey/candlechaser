@@ -9,11 +9,15 @@ from .filters import Filters
 from .notifier import send_alert, send_test
 from .store import Store
 from .stream import news_stream
+from .web import serve_status
 
 
 async def run() -> None:
     store = Store(settings.db_path)
     filters = Filters(settings)
+    web_task = asyncio.create_task(serve_status(settings.port, settings.db_path))
+    web_task.add_done_callback(
+        lambda t: print(f"status server died: {t.exception()!r}") if t.exception() else None)
     print(
         f"candlechaser starting "
         f"(threshold={settings.alert_score_threshold}, model={settings.anthropic_model})"

@@ -1,7 +1,8 @@
 # Render Blueprint for candlechaser.
-# Background workers have no free tier; starter is ~$7/mo.
+# Deployed as a web service (worker + status page); starter keeps it
+# always-on — the free tier spins down without traffic, killing the stream.
 services:
-  - type: worker
+  - type: web
     name: candlechaser
     runtime: python
     region: oregon

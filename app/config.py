@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     alert_start_et: str = "07:00"
     alert_end_et: str = "16:00"
     db_path: str = "./candlechaser.db"
+    port: int = 10000  # Render injects PORT for web services
 
 
 settings = Settings()
