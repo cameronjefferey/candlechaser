@@ -19,6 +19,23 @@ CREATE TABLE IF NOT EXISTS headlines (
     alerted INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_headlines_received ON headlines (received_at);
+
+CREATE TABLE IF NOT EXISTS outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    headline_id INTEGER NOT NULL REFERENCES headlines (id),
+    symbol TEXT NOT NULL,
+    direction TEXT,
+    score INTEGER,
+    alerted INTEGER,
+    base_price REAL,
+    max_up_30m REAL,
+    max_down_30m REAL,
+    max_up_60m REAL,
+    max_down_60m REAL,
+    status TEXT NOT NULL,
+    measured_at REAL NOT NULL,
+    UNIQUE (headline_id, symbol)
+);
 """
 
 
@@ -53,3 +70,43 @@ class Store:
             ),
         )
         self.conn.commit()
+
+    def pending_outcomes(self, min_age_secs: int = 3900, max_age_secs: int = 259200,
+                         limit: int = 25) -> list[tuple]:
+        """Classified headlines old enough to measure (60m window + buffer) that
+        have tickers and no outcome rows yet."""
+        now = time.time()
+        return self.conn.execute(
+            """SELECT id, received_at, score, alerted, result_tickers
+               FROM headlines
+               WHERE score IS NOT NULL
+                 AND result_tickers != '[]'
+                 AND received_at < ? AND received_at > ?
+                 AND id NOT IN (SELECT headline_id FROM outcomes)
+               ORDER BY received_at
+               LIMIT ?""",
+            (now - min_age_secs, now - max_age_secs, limit),
+        ).fetchall()
+
+    def save_outcome(self, headline_id: int, symbol: str, direction: str | None,
+                     score: int, alerted: int, outcome: dict) -> None:
+        self.conn.execute(
+            """INSERT OR IGNORE INTO outcomes
+               (headline_id, symbol, direction, score, alerted, base_price,
+                max_up_30m, max_down_30m, max_up_60m, max_down_60m, status, measured_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                headline_id, symbol, direction, score, alerted,
+                outcome.get("base_price"),
+                outcome.get("max_up_30m"), outcome.get("max_down_30m"),
+                outcome.get("max_up_60m"), outcome.get("max_down_60m"),
+                outcome["status"], time.time(),
+            ),
+        )
+        self.conn.commit()
+
+    def measured_outcomes(self) -> list[tuple]:
+        """(score, alerted, max_up_60m, max_down_60m) for all measured outcomes."""
+        return self.conn.execute(
+            """SELECT score, alerted, max_up_60m, max_down_60m
+               FROM outcomes WHERE status = 'ok'""").fetchall()

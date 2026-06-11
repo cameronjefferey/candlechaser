@@ -20,8 +20,10 @@ class Settings(BaseSettings):
     alert_score_threshold: int = 70
     ticker_cooldown_minutes: int = 15
     market_hours_only: bool = True
-    alert_start_et: str = "07:00"
-    alert_end_et: str = "16:00"
+    # 04:00 = premarket open, 20:00 = after-hours close. Catches evening
+    # earnings and premarket movers you can trade at the open.
+    alert_start_et: str = "04:00"
+    alert_end_et: str = "20:00"
     db_path: str = "./candlechaser.db"
     port: int = 10000  # Render injects PORT for web services
 
