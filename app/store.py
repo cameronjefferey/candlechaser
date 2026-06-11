@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS alerts (
     url TEXT,
     sympathy TEXT                     -- JSON list, filled in Phase 1
 );
+
+CREATE TABLE IF NOT EXISTS insider_buys (
+    accession TEXT PRIMARY KEY,       -- Form 4 accession number
+    ticker TEXT NOT NULL,
+    insider TEXT NOT NULL,
+    filed_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_insider_buys_ticker ON insider_buys (ticker, filed_at);
 """
 
 
@@ -110,6 +118,19 @@ class Store:
         )
         self.conn.commit()
         return alert_id
+
+    def record_insider_buy(self, accession: str, ticker: str, insider: str) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO insider_buys (accession, ticker, insider, filed_at) "
+            "VALUES (?, ?, ?, ?)", (accession, ticker, insider, time.time()))
+        self.conn.commit()
+
+    def insider_buyers(self, ticker: str, window_secs: float) -> list[str]:
+        """Distinct insiders with open-market buys on this ticker in the window."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT insider FROM insider_buys WHERE ticker = ? AND filed_at > ?",
+            (ticker, time.time() - window_secs)).fetchall()
+        return [r[0] for r in rows]
 
     def recent_alert_for(self, symbols: list[str], within_secs: int = 1800,
                          source: str | None = None) -> str | None:

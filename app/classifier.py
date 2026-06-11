@@ -4,7 +4,7 @@ from anthropic import AsyncAnthropic
 
 from .config import settings
 from .events import Event
-from .prompts import SYSTEM_PROMPT
+from .prompts import FILING_PROMPT, SYSTEM_PROMPT
 
 _client: AsyncAnthropic | None = None
 
@@ -19,18 +19,20 @@ def _get_client() -> AsyncAnthropic:
 
 
 async def classify(event: Event) -> dict | None:
+    is_filing = event.meta.get("prompt") == "filing"
     payload = {
         "headline": event.text,
-        "summary": (event.meta.get("summary") or "")[:600],
+        "summary": (event.meta.get("summary") or "")[:1600 if is_filing else 600],
         "tagged_symbols": event.symbols,
         "source": event.meta.get("wire") or event.source,
         "created_at": event.meta.get("created_at", ""),
     }
+    prompt = FILING_PROMPT if is_filing else SYSTEM_PROMPT
     try:
         resp = await _get_client().messages.create(
             model=settings.anthropic_model,
             max_tokens=300,
-            system=SYSTEM_PROMPT,
+            system=prompt,
             messages=[
                 {"role": "user", "content": json.dumps(payload)},
                 # Prefill forces the model to emit raw JSON with no preamble.

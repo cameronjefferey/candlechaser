@@ -10,7 +10,7 @@ from .config import settings
 from .events import Event
 from .filters import Filters
 from .notifier import send_alert, send_test
-from .sources import news
+from .sources import filings, news
 from .store import Store
 from .sympathy import merge_sympathy
 from .tracker import track_outcomes
@@ -22,11 +22,13 @@ def _watch(task: asyncio.Task, name: str) -> None:
         lambda t: print(f"{name} died: {t.exception()!r}") if t.exception() else None)
 
 
-def _enabled_sources() -> dict:
+def _enabled_sources(store: Store) -> dict:
     sources = {}
     if settings.enable_news:
         sources["news"] = news.stream
-    # Later phases: filings, halts, options.
+    if settings.enable_filings:
+        sources["filing"] = lambda: filings.stream(store)
+    # Later phases: halts, options.
     return sources
 
 
@@ -110,7 +112,7 @@ async def run() -> None:
     queue: asyncio.Queue[Event] = asyncio.Queue()
     _watch(asyncio.create_task(serve_status(settings.port, settings.db_path)), "status server")
     _watch(asyncio.create_task(track_outcomes(store)), "outcome tracker")
-    sources = _enabled_sources()
+    sources = _enabled_sources(store)
     for name, source in sources.items():
         _watch(asyncio.create_task(_pump(name, source, queue)), f"source:{name}")
     print(
