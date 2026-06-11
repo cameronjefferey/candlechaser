@@ -34,7 +34,7 @@ async def track_outcomes(store: Store) -> None:
 
 
 async def _measure_batch(store: Store) -> int:
-    pending = store.pending_outcomes()
+    pending = store.pending_outcomes(limit=100)
     if not pending:
         return 0
     headers = {
@@ -46,15 +46,26 @@ async def _measure_batch(store: Store) -> int:
         for headline_id, received_at, score, alerted, tickers_json in pending:
             tickers = json.loads(tickers_json)
             symbols = ",".join(t["symbol"] for t in tickers)
-            resp = await client.get(BARS_URL, params={
-                "symbols": symbols,
-                "timeframe": "1Min",
-                "start": _iso(received_at),
-                "end": _iso(received_at + 3600),
-                "feed": "iex",
-                "limit": 10000,
-            })
-            resp.raise_for_status()
+            try:
+                resp = await client.get(BARS_URL, params={
+                    "symbols": symbols,
+                    "timeframe": "1Min",
+                    "start": _iso(received_at),
+                    "end": _iso(received_at + 3600),
+                    "feed": "iex",
+                    "limit": 10000,
+                })
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if 400 <= exc.response.status_code < 500:
+                    # Bad symbol (e.g. a non-US suffix the LLM invented): mark it
+                    # so it can never block the rest of the queue again.
+                    for t in tickers:
+                        store.save_outcome(headline_id, t["symbol"], t.get("direction"),
+                                           score, alerted, {"status": "error"})
+                    print(f"tracker: bars rejected for {symbols!r}, marked error")
+                    continue
+                raise  # 5xx: transient, retry whole batch next cycle
             bars_by_symbol = resp.json().get("bars") or {}
             for t in tickers:
                 outcome = _compute(bars_by_symbol.get(t["symbol"]) or [], received_at)
