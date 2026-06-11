@@ -40,12 +40,19 @@ writes `alerts.csv` (one row per ticker per alert):
 
 ### Sources and subtypes
 
-| Source | Subtypes | Status |
+| Source | Subtypes | How it scores |
 |---|---|---|
-| `NEWS` | classifier category (`m&a`, `guidance`, `exec_comment`, ...) | live |
-| `FILING` | `8-K`, `activist_stake`, `cluster_buy`, `offering` | planned (Phase 2) |
-| `HALT` | halt code (`LUDP`, `T1`, ...), `resume` | planned (Phase 3) |
-| `OPTIONS` | `sweep` | planned (Phase 4) |
+| `NEWS` | classifier category (`m&a`, `guidance`, `exec_comment`, ...) | LLM (news prompt) |
+| `FILING` | `8-K` | LLM (filing prompt, item-number aware) |
+| `FILING` | `activist_stake` (SC 13D), `cluster_buy` (2+ insider Form 4 buys), `offering` (S-1/424B5) | fixed rules, no LLM |
+| `HALT` | halt reason code (`LUDP`, `T1`, `T12`, ...), `resume` | fixed rules, no LLM |
+| `OPTIONS` | `sweep` | planned (Phase 4, requires Polygon subscription) |
+
+A `CONFIRMED:` prefix on the tag means another source alerted the same ticker within
+the last 30 minutes — the highest-conviction signal the system produces. Every alert
+also carries a `Sympathy:` line with basket peers (curate `data/baskets.yaml`).
+
+Filings require `SEC_USER_AGENT` to contain a real contact email (SEC policy).
 
 ## Tuning
 

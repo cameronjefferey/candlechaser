@@ -10,7 +10,7 @@ from .config import settings
 from .events import Event
 from .filters import Filters
 from .notifier import send_alert, send_test
-from .sources import filings, news
+from .sources import filings, halts, news
 from .store import Store
 from .sympathy import merge_sympathy
 from .tracker import track_outcomes
@@ -28,7 +28,9 @@ def _enabled_sources(store: Store) -> dict:
         sources["news"] = news.stream
     if settings.enable_filings:
         sources["filing"] = lambda: filings.stream(store)
-    # Later phases: halts, options.
+    if settings.enable_halts:
+        sources["halt"] = halts.stream
+    # Phase 4 (options) is gated off until 0-3 have run live.
     return sources
 
 
@@ -86,6 +88,13 @@ async def _handle(event: Event, store: Store, filters: Filters) -> None:
                     tag_prefix = "CONFIRMED:"
                     confirm = f"Confirms earlier alert {prior}."
                     note = f"{note} {confirm}" if note else confirm
+            ref = event.meta.get("reference_prior")
+            if ref:
+                prior = store.recent_alert_for(symbols, within_secs=14400,
+                                               source=ref.get("source"))
+                if prior:
+                    line = f"{ref.get('label', 'Refs')} {prior}."
+                    note = f"{note} {line}" if note else line
 
             alert_id = store.create_alert(
                 source=event.source, subtype=subtype, tickers=alert_tickers,
