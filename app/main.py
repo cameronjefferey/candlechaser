@@ -12,6 +12,7 @@ from .filters import Filters
 from .notifier import send_alert, send_test
 from .sources import news
 from .store import Store
+from .sympathy import merge_sympathy
 from .tracker import track_outcomes
 from .web import serve_status
 
@@ -53,24 +54,46 @@ async def _handle(event: Event, store: Store, filters: Filters) -> None:
             store.log(event, skip_reason=reason)
         return
 
-    result = await classify(event)
-    if result is None:
-        store.log(event, skip_reason="classifier_error")
-        return
+    if "prescored" in event.meta:
+        # Rule-based sources (halts, 13Ds, offerings) skip the LLM entirely.
+        result = event.meta["prescored"]
+    else:
+        result = await classify(event)
+        if result is None:
+            store.log(event, skip_reason="classifier_error")
+            return
 
     alerted = False
-    if result["score"] >= settings.alert_score_threshold:
-        symbols = filters.tradeable_symbols(
-            event.source, [t["symbol"] for t in result["tickers"]])
+    if result["score"] >= settings.alert_score_threshold or event.meta.get("always_alert"):
+        all_symbols = [t["symbol"] for t in result["tickers"]]
+        if event.meta.get("bypass_cooldown"):
+            symbols = all_symbols  # a halt IS the confirmation
+        else:
+            symbols = filters.tradeable_symbols(event.source, all_symbols)
         if symbols:
             alert_tickers = [t for t in result["tickers"] if t["symbol"] in symbols]
+            subtype = event.meta.get("subtype") or result["category"]
+            sympathy = merge_sympathy(symbols, result.get("sympathy_tickers") or [])
+
+            # Cross-source confirmation: an earlier alert on the same ticker
+            # within 30 min is the highest-conviction signal we can produce.
+            tag_prefix, note = "", event.meta.get("note")
+            if event.meta.get("check_confirmation"):
+                prior = store.recent_alert_for(symbols, within_secs=1800)
+                if prior:
+                    tag_prefix = "CONFIRMED:"
+                    confirm = f"Confirms earlier alert {prior}."
+                    note = f"{note} {confirm}" if note else confirm
+
             alert_id = store.create_alert(
-                source=event.source, subtype=result["category"],
-                tickers=alert_tickers, score=result["score"],
-                headline=event.text, url=event.url)
+                source=event.source, subtype=subtype, tickers=alert_tickers,
+                score=result["score"], headline=event.text, url=event.url,
+                sympathy=sympathy)
             alert_result = {**result, "tickers": alert_tickers}
             try:
-                await send_alert(alert_id, event, alert_result, time.time() - event.ts)
+                await send_alert(alert_id, event, alert_result,
+                                 time.time() - event.ts, subtype=subtype,
+                                 sympathy=sympathy, tag_prefix=tag_prefix, note=note)
                 filters.mark_alerted(event.source, symbols)
                 alerted = True
             except Exception as exc:
@@ -137,7 +160,12 @@ def main() -> None:
     if args.classify:
         fake = Event(source="news", source_id="manual", ts=time.time(),
                      text=args.classify)
-        print(json.dumps(asyncio.run(classify(fake)), indent=2))
+        result = asyncio.run(classify(fake))
+        if result:
+            result["sympathy"] = merge_sympathy(
+                [t["symbol"] for t in result["tickers"]],
+                result.get("sympathy_tickers") or [])
+        print(json.dumps(result, indent=2))
         return
     if args.export_alerts:
         export_alerts(args.since)

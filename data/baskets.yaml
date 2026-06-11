@@ -1,0 +1,20 @@
+# Curated theme baskets for sympathy plays. When a stock alerts, peers
+# sharing a basket get listed as second-order trades. Curate over time:
+# add/remove names as themes rotate.
+ai_semis: [NVDA, AMD, AVGO, MRVL, MU, SMCI, ARM, TSM]
+ai_power: [VST, CEG, OKLO, SMR, TLN, NRG]
+ai_software: [PLTR, SNOW, DDOG, MDB, AI]
+crypto_proxies: [COIN, MSTR, HOOD, MARA, RIOT, CLSK]
+glp1: [LLY, NVO, VKTX, HIMS, AMGN]
+ev: [TSLA, RIVN, LCID, XPEV, NIO, LI]
+solar_clean: [ENPH, SEDG, FSLR, RUN, NXT]
+quantum: [IONQ, RGTI, QBTS, QUBT]
+space: [RKLB, ASTS, LUNR, RDW, PL]
+defense: [LMT, RTX, NOC, GD, KTOS, AVAV]
+cybersecurity: [CRWD, PANW, ZS, S, FTNT, OKTA]
+meme_retail: [GME, AMC, BBAI, DJT]
+airlines: [DAL, UAL, AAL, LUV, ALK]
+big_banks: [JPM, BAC, C, WFC, GS, MS]
+oil_majors: [XOM, CVX, COP, OXY, SLB]
+china_adrs: [BABA, PDD, JD, BIDU, NTES]
+uranium: [CCJ, UEC, DNN, NXE, UUUU]

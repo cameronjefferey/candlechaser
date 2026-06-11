@@ -57,9 +57,17 @@ def _sanitize(data: dict) -> dict:
         score = max(0, min(100, int(data.get("score", 0))))
     except (TypeError, ValueError):
         score = 0
+    primary = {t["symbol"] for t in tickers}
+    sympathy = []
+    for s in data.get("sympathy_tickers") or []:
+        if isinstance(s, str) and s.strip():
+            sym = s.strip().upper()
+            if sym not in primary and sym not in sympathy:
+                sympathy.append(sym)
     return {
         "score": score,
         "tickers": tickers,
+        "sympathy_tickers": sympathy[:3],
         "category": str(data.get("category", "other")),
         "rationale": str(data.get("rationale", ""))[:300],
     }

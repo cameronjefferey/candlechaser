@@ -7,6 +7,7 @@ Respond with ONLY a JSON object in this exact shape:
 {
   "score": <integer 0-100>,
   "tickers": [{"symbol": "<TICKER>", "direction": "up" | "down" | "unclear"}],
+  "sympathy_tickers": ["<TICKER>", ...],
   "category": "<one of: m&a, guidance, earnings_surprise, fda_regulatory, exec_comment, analyst_action, activist_stake, short_report, contract_win, product, legal, macro, halt_or_offering, other>",
   "rationale": "<one short sentence>"
 }
@@ -17,6 +18,8 @@ Rules:
   tradeable ticker is MRVL (direction up), not NVDA.
 - Use the ticker of the affected US-listed stock. If no specific tradeable ticker exists,
   return an empty tickers list and a low score.
+- "sympathy_tickers": up to 3 OTHER tickers likely to move in sympathy (sector peers,
+  competitors, suppliers). Empty list if none are obvious. Never repeat the primary tickers.
 - Score 80-100: clearly market-moving and surprising. Unexpected M&A or takeover interest,
   FDA approval/rejection/clinical results, guidance raised or cut, activist stake disclosed,
   short-seller report published, surprise CEO/CFO exit, major exec commenting on ANOTHER

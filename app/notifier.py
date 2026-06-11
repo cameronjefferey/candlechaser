@@ -5,17 +5,24 @@ from .events import Event
 
 
 async def send_alert(alert_id: str, event: Event, result: dict,
-                     pipeline_seconds: float) -> None:
+                     pipeline_seconds: float, subtype: str | None = None,
+                     sympathy: list[str] | None = None, tag_prefix: str = "",
+                     note: str | None = None) -> None:
     # The bracket tag is the journaling key (copy-pasted into happytrader):
     # short, on its own line, always first.
-    tag = f"[{alert_id} | {event.source.upper()}:{result['category']}]"
+    tag = f"[{tag_prefix}{alert_id} | {event.source.upper()}:{subtype or result['category']}]"
     tickers = "  ".join(f"{t['symbol']} {t['direction'].upper()}" for t in result["tickers"])
     lines = [
         f"<code>{tag}</code>",
         f"<b>{tickers}</b> — score {result['score']}/100",
         event.text,
-        f"<i>{result['rationale']}</i>",
     ]
+    if result.get("rationale"):
+        lines.append(f"<i>{result['rationale']}</i>")
+    if sympathy:
+        lines.append(f"Sympathy: {' '.join(sympathy)}")
+    if note:
+        lines.append(note)
     if event.url:
         lines.append(event.url)
     wire = event.meta.get("wire") or event.source

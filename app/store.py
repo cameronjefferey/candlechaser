@@ -111,6 +111,23 @@ class Store:
         self.conn.commit()
         return alert_id
 
+    def recent_alert_for(self, symbols: list[str], within_secs: int = 1800,
+                         source: str | None = None) -> str | None:
+        """Most recent alert_id touching any of these symbols, for confirmation
+        cross-referencing (halt after news, news after sweep, ...)."""
+        cutoff = time.time() - within_secs
+        query = "SELECT alert_id, tickers FROM alerts WHERE created_at > ?"
+        params: list = [cutoff]
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        query += " ORDER BY created_at DESC"
+        wanted = set(symbols)
+        for alert_id, tickers_json in self.conn.execute(query, params):
+            if wanted & {t.get("symbol") for t in json.loads(tickers_json)}:
+                return alert_id
+        return None
+
     def export_alerts(self, since_ts: float = 0) -> list[tuple]:
         """One row per ticker per alert, for the happytrader journaling CSV."""
         rows = []
