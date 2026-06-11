@@ -7,6 +7,8 @@ referencing the original halt alert. Halts on the first poll are baseline
 """
 
 import asyncio
+import csv
+import io
 import time
 import xml.etree.ElementTree as ElementTree
 from collections.abc import AsyncIterator
@@ -19,6 +21,10 @@ from ..config import settings
 from ..events import Event
 
 RSS_URL = "https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts"
+# Fallback: NYSE publishes a cross-exchange halts CSV (covers Nasdaq-listed
+# names too) and tends to be reachable from datacenter IPs where
+# nasdaqtrader.com's bot protection is not.
+NYSE_CSV_URL = "https://www.nyse.com/api/trade-halts/current/download"
 # nasdaqtrader.com sits behind bot protection that rejects non-browser agents.
 BROWSER_HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -49,6 +55,54 @@ def parse_rss(text: str) -> list[dict]:
         if halt["symbol"] and halt["reason"]:
             halts.append(halt)
     return halts
+
+
+# NYSE uses prose reasons; map to the familiar short codes where known.
+_NYSE_REASON_CODES = {
+    "News Pending": "T1",
+    "News Released": "T2",
+    "News and Resumption Times": "T3",
+    "LULD Trading Pause": "LUDP",
+    "Volatility Trading Pause": "LUDP",
+    "Regulatory Concern": "H10",
+}
+
+
+def parse_nyse_csv(text: str) -> list[dict]:
+    """Normalize the NYSE CSV into the same dicts (and tracker keys) the
+    Nasdaq RSS produces."""
+    halts = []
+    for row in csv.DictReader(io.StringIO(text)):
+        symbol = (row.get("Symbol") or "").strip()
+        reason = (row.get("Reason") or "").strip()
+        if not symbol or not reason:
+            continue
+        halts.append({
+            "symbol": symbol,
+            "name": (row.get("Name") or "").strip().strip('"'),
+            "market": (row.get("Exchange") or "").strip(),
+            "reason": _NYSE_REASON_CODES.get(reason, reason.replace(" ", "_")),
+            "halt_date": _us_date(row.get("Halt Date", "")),
+            "halt_time": _padded_time(row.get("Halt Time", "")),
+            "resume_date": _us_date(row.get("Resume Date", "")),
+            "resume_trade_time": _padded_time(row.get("NYSE Resume Time", "")),
+        })
+    return halts
+
+
+def _us_date(iso: str) -> str:
+    """2026-06-10 -> 06/10/2026 (the RSS format the tracker keys on)."""
+    iso = iso.strip()
+    if not iso:
+        return ""
+    y, m, d = iso.split("-")
+    return f"{m}/{d}/{y}"
+
+
+def _padded_time(t: str) -> str:
+    """19:50:00 -> 19:50:00.000"""
+    t = t.strip()
+    return f"{t}.000" if t and "." not in t else t
 
 
 def _halt_key(halt: dict) -> tuple:
@@ -141,23 +195,42 @@ class HaltsTracker:
         )
 
 
+async def _fetch_halts(client: httpx.AsyncClient) -> list[dict] | None:
+    """Nasdaq RSS first, NYSE CSV as fallback; None if both fail."""
+    try:
+        resp = await client.get(RSS_URL)
+        resp.raise_for_status()
+        return parse_rss(resp.text)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
+    try:
+        resp = await client.get(NYSE_CSV_URL)
+        resp.raise_for_status()
+        return parse_nyse_csv(resp.text)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return None
+
+
 async def stream() -> AsyncIterator[Event]:
     tracker = HaltsTracker()
+    failures = 0
     async with httpx.AsyncClient(timeout=15, headers=BROWSER_HEADERS,
                                  follow_redirects=True) as client:
         print("halts: polling started")
         while True:
-            resp = None
-            try:
-                resp = await client.get(RSS_URL)
-                resp.raise_for_status()
-                for event in tracker.poll(parse_rss(resp.text)):
+            halts = await _fetch_halts(client)
+            if halts is None:
+                failures += 1
+                if failures == 1 or failures % 120 == 0:  # don't spam every 5s
+                    print(f"halts: both feeds failing ({failures} consecutive)")
+            else:
+                if failures:
+                    print(f"halts: feed recovered after {failures} failures")
+                failures = 0
+                for event in tracker.poll(halts):
                     yield event
-            except asyncio.CancelledError:
-                raise
-            except ElementTree.ParseError as exc:
-                snippet = (resp.text[:150].replace("\n", " ") if resp else "")
-                print(f"halts: unparseable response ({exc!r}); got: {snippet!r}")
-            except Exception as exc:
-                print(f"halts: poll failed ({exc!r})")
             await asyncio.sleep(settings.halts_poll_seconds)

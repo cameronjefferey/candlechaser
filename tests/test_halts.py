@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.sources.halts import HaltsTracker, _et_timestamp, parse_rss
+from app.sources.halts import HaltsTracker, _et_timestamp, _halt_key, parse_nyse_csv, parse_rss
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -21,6 +21,17 @@ def test_parse_real_rss_snapshot():
     assert kalv["reason"] == "T12"
     assert kalv["halt_time"].startswith("19:50")
     assert kalv["resume_trade_time"] == ""
+
+
+def test_nyse_csv_produces_same_tracker_keys_as_rss():
+    # If the source falls back from the Nasdaq RSS to the NYSE CSV mid-stream,
+    # already-seen halts must not re-alert: keys have to match across feeds.
+    rss = parse_rss((FIXTURES / "halts.rss").read_text())
+    nyse = parse_nyse_csv((FIXTURES / "nyse_halts.csv").read_text())
+    rss_kalv = next(h for h in rss if h["symbol"] == "KALV")
+    nyse_kalv = next(h for h in nyse if h["symbol"] == "KALV")
+    assert _halt_key(rss_kalv) == _halt_key(nyse_kalv)
+    assert nyse_kalv["reason"] == "T1"  # "News Pending" mapped to code
 
 
 def test_baseline_halts_never_alert():
