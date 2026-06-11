@@ -3,6 +3,7 @@ import json
 from anthropic import AsyncAnthropic
 
 from .config import settings
+from .events import Event
 from .prompts import SYSTEM_PROMPT
 
 _client: AsyncAnthropic | None = None
@@ -17,13 +18,13 @@ def _get_client() -> AsyncAnthropic:
     return _client
 
 
-async def classify(item: dict) -> dict | None:
+async def classify(event: Event) -> dict | None:
     payload = {
-        "headline": item.get("headline", ""),
-        "summary": (item.get("summary") or "")[:600],
-        "tagged_symbols": item.get("symbols") or [],
-        "source": item.get("source", ""),
-        "created_at": item.get("created_at", ""),
+        "headline": event.text,
+        "summary": (event.meta.get("summary") or "")[:600],
+        "tagged_symbols": event.symbols,
+        "source": event.meta.get("wire") or event.source,
+        "created_at": event.meta.get("created_at", ""),
     }
     try:
         resp = await _get_client().messages.create(

@@ -24,6 +24,29 @@ Alpaca's free websocket, scores each headline with an LLM for "will this move a 
 Every headline is logged to SQLite (`candlechaser.db`) with its score, whether it alerted,
 and the classifier's rationale — use it to tune `ALERT_SCORE_THRESHOLD`.
 
+## Alert tags and journaling
+
+Every Telegram alert starts with a bracket tag on its own line:
+
+    [CC-20260611-007 | NEWS:exec_comment]
+
+`CC-YYYYMMDD-NNN` is the alert ID (per-day sequence, restart-safe). Copy the tag into
+the happytrader journal entry when you take a trade, then reconcile weekly:
+
+    python -m app.main --export-alerts --since 2026-06-01
+
+writes `alerts.csv` (one row per ticker per alert):
+`alert_id, created_at_iso, source, subtype, symbol, direction, score, headline, url`.
+
+### Sources and subtypes
+
+| Source | Subtypes | Status |
+|---|---|---|
+| `NEWS` | classifier category (`m&a`, `guidance`, `exec_comment`, ...) | live |
+| `FILING` | `8-K`, `activist_stake`, `cluster_buy`, `offering` | planned (Phase 2) |
+| `HALT` | halt code (`LUDP`, `T1`, ...), `resume` | planned (Phase 3) |
+| `OPTIONS` | `sweep` | planned (Phase 4) |
+
 ## Tuning
 
 - Start with `ALERT_SCORE_THRESHOLD=70`. After a few days, query the DB: if you're

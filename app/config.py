@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     telegram_chat_id: str
 
+    # Sources (later phases flip these on)
+    enable_news: bool = True
+    enable_filings: bool = False
+    enable_halts: bool = False
+    enable_options: bool = False
+
     # Behavior
     alert_score_threshold: int = 70
     ticker_cooldown_minutes: int = 15

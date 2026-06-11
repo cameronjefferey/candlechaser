@@ -1,20 +1,25 @@
 import httpx
 
 from .config import settings
+from .events import Event
 
 
-async def send_alert(item: dict, result: dict, pipeline_seconds: float) -> None:
+async def send_alert(alert_id: str, event: Event, result: dict,
+                     pipeline_seconds: float) -> None:
+    # The bracket tag is the journaling key (copy-pasted into happytrader):
+    # short, on its own line, always first.
+    tag = f"[{alert_id} | {event.source.upper()}:{result['category']}]"
     tickers = "  ".join(f"{t['symbol']} {t['direction'].upper()}" for t in result["tickers"])
     lines = [
+        f"<code>{tag}</code>",
         f"<b>{tickers}</b> — score {result['score']}/100",
-        item.get("headline", ""),
+        event.text,
         f"<i>{result['rationale']}</i>",
     ]
-    if item.get("url"):
-        lines.append(item["url"])
-    lines.append(
-        f"{result['category']} | {item.get('source', '')} | {pipeline_seconds:.1f}s wire-to-alert"
-    )
+    if event.url:
+        lines.append(event.url)
+    wire = event.meta.get("wire") or event.source
+    lines.append(f"{wire} | {pipeline_seconds:.1f}s wire-to-alert")
     await _send("\n".join(lines))
 
 

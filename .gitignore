@@ -1,5 +1,6 @@
 .env
 *.db
+alerts.csv
 __pycache__/
 *.pyc
 .venv/
