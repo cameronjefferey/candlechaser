@@ -160,6 +160,7 @@ class HaltsTracker:
                   f"at {halt['halt_time'][:8]})"),
             symbols=[halt["symbol"]],
             meta={
+                "suppress_alert": not settings.halt_alerts_enabled,
                 "subtype": "resume",
                 "bypass_cooldown": True,
                 "reference_prior": {"source": "halt", "label": "Resume for"},
@@ -182,6 +183,7 @@ class HaltsTracker:
                   f"on {halt['market']}"),
             symbols=[halt["symbol"]],
             meta={
+                "suppress_alert": not settings.halt_alerts_enabled,
                 "subtype": halt["reason"],
                 "bypass_cooldown": True,      # a halt IS the confirmation
                 "check_confirmation": True,   # earlier alert on this ticker? CONFIRMED:

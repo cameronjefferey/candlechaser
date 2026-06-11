@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Halts source
     halts_poll_seconds: int = 5
     halt_score: int = 80
+    # When false, halts are still ingested, logged, and measured by the
+    # outcome tracker — they just don't push Telegram alerts.
+    halt_alerts_enabled: bool = True
 
     # Options flow source (Phase 4, off by default)
     polygon_api_key: str = ""

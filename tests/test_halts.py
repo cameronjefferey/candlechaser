@@ -76,6 +76,21 @@ def test_resume_fires_once_inside_lead_window():
     assert tracker.poll([_new_halt(resumed=True)], now=resume_at + 60) == []
 
 
+def test_suppress_alert_flag_follows_setting(monkeypatch):
+    from app.sources import halts as halts_mod
+    monkeypatch.setattr(halts_mod.settings, "halt_alerts_enabled", False)
+    tracker = HaltsTracker()
+    tracker.poll([])
+    events = tracker.poll([_new_halt()])
+    assert events[0].meta["suppress_alert"] is True
+
+    monkeypatch.setattr(halts_mod.settings, "halt_alerts_enabled", True)
+    tracker2 = HaltsTracker()
+    tracker2.poll([])
+    events2 = tracker2.poll([_new_halt()])
+    assert events2[0].meta["suppress_alert"] is False
+
+
 def test_baseline_halt_resume_never_alerts():
     tracker = HaltsTracker()
     tracker.poll([_new_halt()])               # baseline includes the halt

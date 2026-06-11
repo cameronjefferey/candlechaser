@@ -68,7 +68,9 @@ async def _handle(event: Event, store: Store, filters: Filters) -> None:
             return
 
     alerted = False
-    if result["score"] >= settings.alert_score_threshold or event.meta.get("always_alert"):
+    if event.meta.get("suppress_alert"):
+        pass  # log + measure outcomes, but stay off the phone
+    elif result["score"] >= settings.alert_score_threshold or event.meta.get("always_alert"):
         all_symbols = [t["symbol"] for t in result["tickers"]]
         if event.meta.get("bypass_cooldown"):
             symbols = all_symbols  # a halt IS the confirmation
