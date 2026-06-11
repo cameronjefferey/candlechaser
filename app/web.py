@@ -10,6 +10,8 @@ import json
 import sqlite3
 import time
 
+from .config import settings
+
 _started_at = time.time()
 
 PAGE = """<!doctype html>
@@ -47,11 +49,22 @@ PAGE = """<!doctype html>
   <div class="stat"><b>{alerts_24h}</b><small>alerts / 24h</small></div>
 </div>
 <h2>calibration</h2>
-<p class="sub">% of classified headlines where the stock actually moved &ge;2% within 60 min
-(measured from 1-min bars; thin extended-hours data is excluded)</p>
+<p class="sub">Direction-aware: a hit means the stock moved &ge;2% within 60 min
+<b>in the predicted direction</b> ("unclear" counts either way). A buyable alert
+needs the 70+ buckets green.</p>
 <table>
-<tr><th>score bucket</th><th>measured</th><th>hit &ge;2%</th><th>median max move</th></tr>
+<tr><th>score bucket</th><th>measured</th><th>hit &ge;2% w/ direction</th>
+<th>moved &ge;2% any direction</th><th>median favorable move</th></tr>
 {calibration_rows}
+</table>
+
+<h2>would-be alerts</h2>
+<p class="sub">Headlines at/above the alert threshold with their measured outcome —
+this is the feed being judged before alerts resume. ✓ = moved &ge;2% in the
+predicted direction within 60 min.</p>
+<table>
+<tr><th>hit</th><th>score</th><th>move</th><th>tickers</th><th>headline</th></tr>
+{wouldbe_rows}
 </table>
 
 <h2>recent headlines</h2>
@@ -80,21 +93,68 @@ BUCKETS = [(85, 100, "85-100"), (70, 84, "70-84"), (50, 69, "50-69"),
            (30, 49, "30-49"), (0, 29, "0-29")]
 
 
+def directional_hit(direction: str | None, up: float | None, down: float | None,
+                    threshold: float = 2.0) -> bool:
+    """Did the stock move >=threshold% in the predicted direction?"""
+    up, down = up or 0, down or 0
+    if direction == "up":
+        return up >= threshold
+    if direction == "down":
+        return down <= -threshold
+    return up >= threshold or down <= -threshold  # unclear: either way counts
+
+
+def favorable_move(direction: str | None, up: float | None, down: float | None) -> float:
+    """The move in the predicted direction (or best move if unclear)."""
+    up, down = up or 0, down or 0
+    if direction == "up":
+        return up
+    if direction == "down":
+        return -down
+    return max(up, -down)
+
+
 def _calibration_rows(outcomes: list[tuple]) -> str:
     rows = []
     for lo, hi, label in BUCKETS:
-        moves = [max(up or 0, -(down or 0))
-                 for score, _alerted, up, down in outcomes if lo <= (score or 0) <= hi]
-        if not moves:
-            rows.append(f"<tr><td>{label}</td><td>0</td><td>—</td><td>—</td></tr>")
+        bucket = [(d, up, down) for score, _a, d, up, down in outcomes
+                  if lo <= (score or 0) <= hi]
+        if not bucket:
+            rows.append(f"<tr><td>{label}</td><td>0</td><td>—</td><td>—</td><td>—</td></tr>")
             continue
-        hits = sum(1 for m in moves if m >= 2)
-        moves.sort()
-        median = moves[len(moves) // 2]
+        n = len(bucket)
+        dir_hits = sum(1 for d, up, down in bucket if directional_hit(d, up, down))
+        any_hits = sum(1 for d, up, down in bucket
+                       if max(up or 0, -(down or 0)) >= 2)
+        moves = sorted(favorable_move(d, up, down) for d, up, down in bucket)
+        median = moves[n // 2]
         rows.append(
-            f"<tr><td>{label}</td><td>{len(moves)}</td>"
-            f"<td>{hits / len(moves) * 100:.0f}%</td><td>{median:+.1f}%</td></tr>")
+            f"<tr><td>{label}</td><td>{n}</td>"
+            f"<td>{dir_hits / n * 100:.0f}%</td><td>{any_hits / n * 100:.0f}%</td>"
+            f"<td>{median:+.1f}%</td></tr>")
     return "\n".join(rows)
+
+
+def _wouldbe_rows(rows_data: list[tuple]) -> str:
+    rows = []
+    for headline, score, tickers_json, direction, up, down, status in rows_data:
+        tickers = " ".join(
+            f"{t['symbol']}{'↑' if t['direction'] == 'up' else '↓' if t['direction'] == 'down' else ''}"
+            for t in json.loads(tickers_json or "[]"))
+        if status is None:
+            hit, move = "…", "pending"
+        elif status != "ok":
+            hit, move = "?", "no data"
+        else:
+            hit = "✓" if directional_hit(direction, up, down) else "✗"
+            move = f"{favorable_move(direction, up, down):+.1f}%"
+        color = "hot" if hit == "✓" else "cold" if hit in ("…", "?") else "warm"
+        rows.append(
+            f'<tr><td class="{color}">{hit}</td>'
+            f'<td class="score {_score_class(score)}">{score}</td>'
+            f'<td>{move}</td><td class="tick">{html.escape(tickers)}</td>'
+            f'<td>{html.escape(headline or "")}</td></tr>')
+    return "\n".join(rows) or '<tr><td colspan="5">nothing at threshold yet</td></tr>'
 
 
 def _render_page(db_path: str) -> str:
@@ -109,8 +169,17 @@ def _render_page(db_path: str) -> str:
                FROM headlines WHERE score IS NOT NULL
                ORDER BY received_at DESC LIMIT 30""").fetchall()
         outcomes = conn.execute(
-            """SELECT score, alerted, max_up_60m, max_down_60m
+            """SELECT score, alerted, direction, max_up_60m, max_down_60m
                FROM outcomes WHERE status = 'ok'""").fetchall()
+        wouldbe = conn.execute(
+            """SELECT h.headline, h.score, h.result_tickers,
+                      o.direction, o.max_up_60m, o.max_down_60m, o.status
+               FROM headlines h
+               LEFT JOIN outcomes o ON o.headline_id = h.id
+               WHERE h.score >= ?
+               GROUP BY h.id
+               ORDER BY h.received_at DESC LIMIT 25""",
+            (settings.alert_score_threshold,)).fetchall()
     finally:
         conn.close()
 
@@ -128,6 +197,7 @@ def _render_page(db_path: str) -> str:
     return PAGE.format(uptime=_uptime(), seen_24h=seen or 0, scored_24h=scored or 0,
                        alerts_24h=alerts or 0,
                        calibration_rows=_calibration_rows(outcomes),
+                       wouldbe_rows=_wouldbe_rows(wouldbe),
                        rows="\n".join(rows) or '<tr><td colspan="3">nothing scored yet</td></tr>')
 
 

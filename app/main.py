@@ -68,9 +68,11 @@ async def _handle(event: Event, store: Store, filters: Filters) -> None:
             return
 
     alerted = False
-    if event.meta.get("suppress_alert"):
+    would_alert = (result["score"] >= settings.alert_score_threshold
+                   or event.meta.get("always_alert"))
+    if settings.training_mode or event.meta.get("suppress_alert"):
         pass  # log + measure outcomes, but stay off the phone
-    elif result["score"] >= settings.alert_score_threshold or event.meta.get("always_alert"):
+    elif would_alert:
         all_symbols = [t["symbol"] for t in result["tickers"]]
         if event.meta.get("bypass_cooldown"):
             symbols = all_symbols  # a halt IS the confirmation
@@ -113,7 +115,7 @@ async def _handle(event: Event, store: Store, filters: Filters) -> None:
                 print(f"alert send failed for {alert_id}: {exc!r}")
 
     store.log(event, result=result, alerted=alerted)
-    flag = "ALERT" if alerted else "     "
+    flag = "ALERT" if alerted else "WOULD" if would_alert and settings.training_mode else "     "
     print(f"{flag} [{result['score']:3d}] ({event.source}) {event.text[:100]}")
 
 
@@ -129,7 +131,8 @@ async def run() -> None:
     print(
         f"candlechaser starting "
         f"(sources={'+'.join(sources) or 'none'}, "
-        f"threshold={settings.alert_score_threshold}, model={settings.anthropic_model})"
+        f"threshold={settings.alert_score_threshold}, model={settings.anthropic_model}"
+        f"{', TRAINING MODE - no alerts' if settings.training_mode else ''})"
     )
     while True:
         event = await queue.get()

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     polygon_api_key: str = ""
 
     # Behavior
+    # Training mode: full pipeline runs (classify, log, measure outcomes) but
+    # nothing pushes to Telegram. Used to calibrate before trusting alerts.
+    training_mode: bool = False
     alert_score_threshold: int = 70
     ticker_cooldown_minutes: int = 15
     market_hours_only: bool = True
