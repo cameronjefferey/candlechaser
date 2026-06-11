@@ -19,6 +19,13 @@ from ..config import settings
 from ..events import Event
 
 RSS_URL = "https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts"
+# nasdaqtrader.com sits behind bot protection that rejects non-browser agents.
+BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 NS = {"ndaq": "http://www.nasdaqtrader.com/"}
 ET_TZ = ZoneInfo("America/New_York")
 RESUME_LEAD_SECS = 60
@@ -136,10 +143,11 @@ class HaltsTracker:
 
 async def stream() -> AsyncIterator[Event]:
     tracker = HaltsTracker()
-    headers = {"User-Agent": settings.sec_user_agent}
-    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+    async with httpx.AsyncClient(timeout=15, headers=BROWSER_HEADERS,
+                                 follow_redirects=True) as client:
         print("halts: polling started")
         while True:
+            resp = None
             try:
                 resp = await client.get(RSS_URL)
                 resp.raise_for_status()
@@ -147,6 +155,9 @@ async def stream() -> AsyncIterator[Event]:
                     yield event
             except asyncio.CancelledError:
                 raise
+            except ElementTree.ParseError as exc:
+                snippet = (resp.text[:150].replace("\n", " ") if resp else "")
+                print(f"halts: unparseable response ({exc!r}); got: {snippet!r}")
             except Exception as exc:
                 print(f"halts: poll failed ({exc!r})")
             await asyncio.sleep(settings.halts_poll_seconds)
