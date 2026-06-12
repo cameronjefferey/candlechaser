@@ -37,6 +37,7 @@ PAGE = """<!doctype html>
   .tick {{ color: #58a6ff; white-space: nowrap; }}
   .alerted {{ background: rgba(63, 185, 80, .08); }}
   h2 {{ font-size: 1.05rem; margin-top: 2.2rem; }}
+  h3 {{ font-size: .9rem; color: #8b949e; margin: 1.4rem 0 .4rem; }}
   .sub {{ color: #8b949e; font-size: .85rem; margin-top: -.4rem; }}
 </style>
 </head>
@@ -50,18 +51,15 @@ PAGE = """<!doctype html>
 </div>
 <h2>calibration</h2>
 <p class="sub">Direction-aware: a hit means the stock moved &ge;2% within 60 min
-<b>in the predicted direction</b> ("unclear" counts either way). A buyable alert
-needs the 70+ buckets green.</p>
-<table>
-<tr><th>score bucket</th><th>measured</th><th>hit &ge;2% w/ direction</th>
-<th>moved &ge;2% any direction</th><th>median favorable move</th></tr>
-{calibration_rows}
-</table>
+<b>in the predicted direction</b> ("unclear" counts either way). Split by source —
+halt "outcomes" mostly measure the move that caused the halt, so only news/filing
+numbers reflect buyable alerts.</p>
+{calibration_sections}
 
 <h2>would-be alerts</h2>
-<p class="sub">Headlines at/above the alert threshold with their measured outcome —
-this is the feed being judged before alerts resume. ✓ = moved &ge;2% in the
-predicted direction within 60 min.</p>
+<p class="sub">Headlines at/above the alert threshold with their measured outcome
+(halts excluded) — this is the feed being judged before alerts resume.
+✓ = moved &ge;2% in the predicted direction within 60 min.</p>
 <table>
 <tr><th>hit</th><th>score</th><th>move</th><th>tickers</th><th>headline</th></tr>
 {wouldbe_rows}
@@ -112,6 +110,28 @@ def favorable_move(direction: str | None, up: float | None, down: float | None) 
     if direction == "down":
         return -down
     return max(up, -down)
+
+
+SOURCE_ORDER = ["news", "filing", "halt"]
+
+
+def _calibration_sections(outcomes: list[tuple]) -> str:
+    """One bucket table per source. Rows are (source, score, alerted, direction, up, down)."""
+    by_source: dict[str, list[tuple]] = {}
+    for source, *rest in outcomes:
+        by_source.setdefault(source or "?", []).append(tuple(rest))
+    if not by_source:
+        return "<p class='sub'>no measured outcomes yet</p>"
+    sections = []
+    ordered = sorted(by_source, key=lambda s: (SOURCE_ORDER.index(s)
+                                               if s in SOURCE_ORDER else 99, s))
+    for source in ordered:
+        sections.append(
+            f"<h3>{html.escape(source)}</h3>\n<table>\n"
+            "<tr><th>score bucket</th><th>measured</th><th>hit &ge;2% w/ direction</th>"
+            "<th>moved &ge;2% any direction</th><th>median favorable move</th></tr>\n"
+            f"{_calibration_rows(by_source[source])}\n</table>")
+    return "\n".join(sections)
 
 
 def _calibration_rows(outcomes: list[tuple]) -> str:
@@ -169,14 +189,16 @@ def _render_page(db_path: str) -> str:
                FROM headlines WHERE score IS NOT NULL
                ORDER BY received_at DESC LIMIT 30""").fetchall()
         outcomes = conn.execute(
-            """SELECT score, alerted, direction, max_up_60m, max_down_60m
-               FROM outcomes WHERE status = 'ok'""").fetchall()
+            """SELECT h.source, o.score, o.alerted, o.direction,
+                      o.max_up_60m, o.max_down_60m
+               FROM outcomes o JOIN headlines h ON h.id = o.headline_id
+               WHERE o.status = 'ok'""").fetchall()
         wouldbe = conn.execute(
             """SELECT h.headline, h.score, h.result_tickers,
                       o.direction, o.max_up_60m, o.max_down_60m, o.status
                FROM headlines h
                LEFT JOIN outcomes o ON o.headline_id = h.id
-               WHERE h.score >= ?
+               WHERE h.score >= ? AND h.source != 'halt'
                GROUP BY h.id
                ORDER BY h.received_at DESC LIMIT 25""",
             (settings.alert_score_threshold,)).fetchall()
@@ -196,7 +218,7 @@ def _render_page(db_path: str) -> str:
 
     return PAGE.format(uptime=_uptime(), seen_24h=seen or 0, scored_24h=scored or 0,
                        alerts_24h=alerts or 0,
-                       calibration_rows=_calibration_rows(outcomes),
+                       calibration_sections=_calibration_sections(outcomes),
                        wouldbe_rows=_wouldbe_rows(wouldbe),
                        rows="\n".join(rows) or '<tr><td colspan="3">nothing scored yet</td></tr>')
 
